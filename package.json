@@ -1,0 +1,18 @@
+{
+  "name": "oidc-backend",
+  "version": "1.0.0",
+  "description": "Simple Node.js + MySQL backend for OIDC ECS deployment demo",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "mysql2": "^3.6.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
