@@ -1,0 +1,80 @@
+name: Deploy — Staging
+
+on:
+  push:
+    branches: [staging]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION:             us-east-1
+  ECR_REPOSITORY:         oidc-backend
+  ECS_CLUSTER:            oidc-cluster
+  ECS_SERVICE:            oidc-service
+  TASK_DEFINITION_FAMILY: oidc-backend
+  CONTAINER_NAME:         oidc-backend
+  ENVIRONMENT:            staging
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and deploy to staging
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-staging-${{ github.run_id }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ env.ENVIRONMENT }}-${{ github.sha }}
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            --push \
+            ./app
+          echo "IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Fetch current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition $TASK_DEFINITION_FAMILY \
+            --query taskDefinition \
+            | jq 'del(.taskDefinitionArn,.revision,.status,
+                      .requiresAttributes,.compatibilities,
+                      .registeredAt,.registeredBy,.deregisteredAt)' \
+            > task-def.json
+
+      - name: Render task definition with new image
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ env.IMAGE_URI }}
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
