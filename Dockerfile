@@ -1,11 +1,11 @@
 FROM node:20-alpine AS deps
-WORKDIR /app
+WORKDIR /
 COPY package*.json ./
 RUN npm ci --only=production
 
 FROM node:20-alpine
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+WORKDIR /
+COPY --from=deps //node_modules ./node_modules
 COPY package.json ./
 COPY src ./src
 EXPOSE 3000
